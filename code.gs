@@ -1,49 +1,69 @@
-function getSentEmailsWithDateFromFeb1() {
+function getSentEmailsUniqueLatestDateFromFeb1_noSelf() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   sheet.clear();
-  sheet.appendRow(["Email Address", "Sent Date"]);
+  sheet.appendRow(["Email Address", "Latest Sent Date"]);
 
-  // February 1 (current year)
   const startDate = new Date(new Date().getFullYear(), 1, 1);
 
-  const query = `in:sent after:${formatDate(startDate)}`;
-  const threads = GmailApp.search(query);
+  const query = "in:sent";
+  const batchSize = 100;
+  let start = 0;
 
-  const rows = [];
+  const emailMap = new Map();
 
-  threads.forEach(thread => {
-    const messages = thread.getMessages();
+  // 🔴 PUT YOUR EMAIL HERE
+  const myEmail = Session.getActiveUser().getEmail().toLowerCase();
 
-    messages.forEach(message => {
-      const date = message.getDate();
+  while (true) {
+    const threads = GmailApp.search(query, start, batchSize);
+    if (threads.length === 0) break;
 
-      processField(message.getTo(), date, rows);
-      processField(message.getCc(), date, rows);
-      processField(message.getBcc(), date, rows);
+    threads.forEach(thread => {
+      const messages = thread.getMessages();
+
+      messages.forEach(msg => {
+        const msgDate = msg.getDate();
+
+        if (msgDate < startDate) return;
+
+        process(msg.getTo(), msgDate, emailMap, myEmail);
+        process(msg.getCc(), msgDate, emailMap, myEmail);
+        process(msg.getBcc(), msgDate, emailMap, myEmail);
+      });
     });
-  });
 
-  // Write all rows at once (faster)
-  if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+    start += batchSize;
   }
 
-  Logger.log(`Total rows: ${rows.length}`);
+  const rows = Array.from(emailMap.entries())
+    .map(([email, date]) => [email, date])
+    .sort((a, b) => new Date(b[1]) - new Date(a[1]));
+
+  sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+
+  Logger.log("Unique external emails: " + rows.length);
 }
 
-// Extract emails + attach date
-function processField(field, date, rows) {
+// 🚫 exclude self email
+function process(field, date, emailMap, myEmail) {
   if (!field) return;
 
   const matches = field.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g);
-  if (matches) {
-    matches.forEach(email => {
-      rows.push([email.toLowerCase(), date]);
-    });
-  }
-}
+  if (!matches) return;
 
-// Format date for Gmail query
-function formatDate(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy/MM/dd");
+  matches.forEach(email => {
+    email = email.toLowerCase();
+
+    // 🔴 skip your own email
+    if (email === myEmail) return;
+
+    if (!emailMap.has(email)) {
+      emailMap.set(email, date);
+    } else {
+      const existingDate = emailMap.get(email);
+      if (date > existingDate) {
+        emailMap.set(email, date);
+      }
+    }
+  });
 }
