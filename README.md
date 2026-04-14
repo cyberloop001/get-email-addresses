@@ -19,6 +19,7 @@ This Google Apps Script extracts all unique email addresses from your **sent ema
 
 ## 📂 Project Structure
 ├── Code.gs # Main Apps Script file
+
 └── README.md # Documentation
 
 
